@@ -122,11 +122,12 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-scans/
-# *.csv
-# *.png
-*.tif
-*.jpg
-*.jpeg
+scans/*.csv
+scans/*.png
+scans/*.tif
+scans/*.jpg
+scans/*.jpeg
+scans/*.txt
+
 test_serial.py
 SERIAL_DEBUGGING_GUIDE.md

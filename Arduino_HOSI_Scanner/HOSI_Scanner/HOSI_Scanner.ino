@@ -263,15 +263,15 @@ void tilt(long tv){
 void openShutter(){
   shutterServo.write(SHUTTER_OPEN);
   isShutterOpen = true;
-  Serial.println("Shutter opened");
-  delay(500); // Give the servo time to move
+  // Serial.println("Shutter opened");
+  delay(100); // Give the servo time to move
 }
 
 void closeShutter(){
   shutterServo.write(SHUTTER_CLOSED);
   isShutterOpen = false;
-  Serial.println("Shutter closed");
-  delay(500); // Give the servo time to move
+  // Serial.println("Shutter closed");
+  delay(100); // Give the servo time to move
 }
 
 void reportShutterStatus(){
@@ -285,7 +285,7 @@ void reportShutterStatus(){
 void setServoAngle(int angle){
   shutterServo.write(angle);
   Serial.println("Servo angle set to: " + String(angle));
-  delay(500); // Give the servo time to move
+  delay(100); // Give the servo time to move
 }
 
 void darkMeasure(){

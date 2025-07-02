@@ -1,7 +1,6 @@
 from tkinter import *
 from tkinter import filedialog as fd
 from tkinter import messagebox
-from tkinter import ttk
 import numpy as np
 from PIL import Image, ImageTk, ImageOps
 import string, time, os, sys, math
@@ -9,9 +8,6 @@ import string, time, os, sys, math
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Suppress Tk deprecation warning on macOS
-if sys.platform == 'darwin':
-    os.environ['TK_SILENCE_DEPRECATION'] = '1'
 
 platform = "win"
 if any(key for key in os.environ if key.startswith('ANDROID_')) == True:
@@ -23,88 +19,10 @@ else:
 	import serial.tools.list_ports
 
 ser = None
-serialConnected = False
-availablePorts = []
 
 root = Tk()
-root.geometry('800x1200')  # Increased height further
-root.minsize(800, 1200)    # Set minimum window size
-root.title('Neurotech Hub Spectrometer')
-
-# Modern color scheme
-COLORS = {
-    'bg': '#e5e5e5',           # Consistent light gray background
-    'fg': '#1d1d1f',           # Dark text
-    'accent': '#007AFF',       # Native blue accent
-    'accent_fg': 'white',      # White text on accent buttons
-    'input_bg': 'white',       # White input background
-    'input_fg': '#1d1d1f',     # Dark text for inputs
-    'input_border': '#d2d2d7', # Light gray border
-    'disabled': '#86868b',     # Disabled text/controls
-    'success': '#34c759',      # Green for success states
-    'error': '#ff3b30',        # Red for error states
-    'warning': '#ff9500',      # Orange for warnings
-    'plot_bg': 'white',        # White plot background
-    'label_fg': '#1d1d1f',     # Dark text for labels
-}
-
-# Configure ttk styles for a modern look
-from tkinter import ttk
-style = ttk.Style()
-
-if sys.platform == 'darwin':  # macOS specific styling
-    style.theme_use('aqua')
-else:
-    style.theme_use('clam')  # Modern theme for Windows/Linux
-
-# Configure ttk styles
-style.configure('TButton', 
-    padding=(6, 4),  # Reduced horizontal padding
-)
-style.configure('TEntry', 
-    padding=4
-)
-style.configure('TFrame', 
-    background=COLORS['bg']
-)
-style.configure('TLabel', 
-    padding=2,
-    background=COLORS['bg']
-)
-style.configure('TCombobox', 
-    padding=4
-)
-style.configure('Horizontal.TScale',
-    sliderrelief='flat'
-)
-
-# Configure root window
-root.configure(bg=COLORS['bg'])
-root.option_add('*Font', ('System', 10))  # Use system font
-
-# Configure root grid weights for vertical spacing - matching GUI_old.py
-root.rowconfigure(0, weight=0)  # Serial frame - fixed
-root.rowconfigure(1, weight=0)  # Top frame - fixed  
-root.rowconfigure(2, weight=0)  # Frame2 - fixed
-root.rowconfigure(3, weight=0)  # Frame3 - fixed
-root.rowconfigure(4, weight=1)  # Image display - main expansion
-root.rowconfigure(5, weight=0)  # Spectral plot - fixed
-root.rowconfigure(6, weight=0)  # Controls - fixed
-root.columnconfigure(0, weight=1)
-
-# Update matplotlib style for native look
-plt.style.use('default')
-matplotlib_style = {
-    'figure.facecolor': COLORS['plot_bg'],
-    'axes.facecolor': COLORS['plot_bg'],
-    'axes.edgecolor': COLORS['input_border'],
-    'axes.labelcolor': COLORS['fg'],
-    'axes.spines.top': False,
-    'axes.spines.right': False,
-    'grid.alpha': 0.3,
-    'grid.color': COLORS['input_border'],
-}
-plt.rcParams.update(matplotlib_style)
+root.geometry('600x800')
+root.title('HOSI')
 
 np.set_printoptions(suppress=False, precision=3, threshold=sys.maxsize, linewidth=sys.maxsize)
 
@@ -178,111 +96,46 @@ def safeSerialRead():
         print(f"ERROR reading from serial: {e}")
         return None
 
-def scanSerialPorts():
-    """Scan for available serial ports and update the dropdown"""
-    global availablePorts
-    availablePorts = []
-    
-    if platform == 'and':
-        usb_device_list = usb.get_usb_device_list()
-        device_name_list = [device.getDeviceName() for device in usb_device_list]
-        availablePorts = device_name_list
-    else:
-        ports = serial.tools.list_ports.comports()
-        availablePorts = [p.device for p in ports]
-    
-    # Update the dropdown
-    serialPortVar.set('')  # Clear current selection
-    serialPortDropdown['values'] = availablePorts
-    
-    if availablePorts:
-        updateStatus(f"Found {len(availablePorts)} port(s)")
-        # Auto-select the last port (often the most recently connected device)
-        serialPortVar.set(availablePorts[-1])
-    else:
-        updateStatus("No serial ports found")
-    
-    print(f"Available ports: {availablePorts}")
-
-def connectSerial():
-    """Connect to the selected serial port"""
-    global ser, serialName, serialConnected
-    
-    selectedPort = serialPortVar.get()
-    if not selectedPort:
-        updateStatus("Please select a serial port")
-        return
-    
-    try:
-        if ser and serialConnected:
-            disconnectSerial()
-        
-        if platform == 'and':
-            deviceName = usb.get_usb_device(selectedPort)
-            while not usb.has_usb_permission(deviceName):
-                usb.request_usb_permission(deviceName)
-                time.sleep(1)
-            ser = serial4a.get_serial_port(selectedPort, baudrate, 8, 'N', 1, timeout=1)
-        else:
-            ser = serial.Serial(selectedPort, baudrate, timeout=1)
-        
-        serialName = selectedPort
-        serialConnected = True
-        updateStatus(f"Connected to {selectedPort}")
-        
-        # Update button states
-        btConnect.config(state="disabled")
-        btDisconnect.config(state="normal")
-        btScan.config(state="disabled")
-        serialPortDropdown.config(state="disabled")
-        
-        # Enable the Start button
-        btStart.config(state="normal")
-        
-        print(f"Successfully connected to {selectedPort}")
-        
-    except Exception as e:
-        updateStatus(f"Connection failed: {str(e)}")
-        print(f"Failed to connect to {selectedPort}: {e}")
-        ser = None
-        serialConnected = False
-
-def disconnectSerial():
-    """Disconnect from the current serial port"""
-    global ser, serialConnected
-    
-    if ser:
-        try:
-            ser.close()
-        except:
-            pass
-        ser = None
-    
-    serialConnected = False
-    updateStatus("Disconnected")
-    
-    # Update button states
-    btConnect.config(state="normal")
-    btDisconnect.config(state="disabled")
-    btScan.config(state="normal")
-    serialPortDropdown.config(state="readonly")
-    
-    # Disable the Start button
-    btStart.config(state="disabled")
-    
-    print("Disconnected from serial port")
-
 def connect():
 	global ser, serialName
-	# This function is now called during initial setup
-	# Actual connection is handled by connectSerial()
-	scanSerialPorts()  # Scan ports on startup
+	if platform == 'and':
+		usb_device_list = usb.get_usb_device_list()
+		#print(usb_device_list)
+		device_name_list = [
+				device.getDeviceName() for device in usb_device_list
+			    ]
+		#serialName ='/dev/bus/usb/001/018'
+		if(len(device_name_list) > 0):
+			serialName = device_name_list[0]
+			deviceName = usb.get_usb_device(serialName)
+
+			while not usb.has_usb_permission(deviceName):
+				usb.request_usb_permission(deviceName)
+				time.sleep(1)
+
+			ser =  serial4a.get_serial_port(serialName, baudrate, 8,'N',1,timeout=1)
+		else:
+			serialName = 0
+	else:
+		ports = serial.tools.list_ports.comports()
+		com_list = []
+		for p in ports:
+			com_list.append(p.device)
+
+		print(com_list)
+		#serialName = '/dev/ttyUSB0'
+		if(len(com_list) > 0):
+			# ~ serialName = com_list[0]
+			serialName = com_list[len(com_list)-1]
+			ser = serial.Serial(serialName, baudrate)
+		else:
+			serialName = 0
 
 try:
 	connect()
 except:
-	print("Initial port scan failed")
-	print("Use the Scan button to find available ports")
+	print("Not connected")
+	print("Check connection, and that the code is using the correct serial port")
 	
 print(ser)
 
@@ -427,12 +280,12 @@ darkRepVal = StringVar()
 reflVal = StringVar()
 specOutVal = StringVar()
 
-panFrom.set("-60")  # Degrees (-90 to 90)
-panTo.set("60")     # Degrees (-90 to 90)
-panResolution.set("30")  # Degrees between positions
-tiltFrom.set("-60")  # Degrees (-90 to 90)
-tiltTo.set("60")     # Degrees (-90 to 90)
-tiltResolution.set("30")  # Degrees between positions
+panFrom.set("-20")  # Degrees (-90 to 90)
+panTo.set("20")     # Degrees (-90 to 90)
+panResolution.set("4")  # Steps between positions
+tiltFrom.set("-20")  # Degrees (-90 to 90)
+tiltTo.set("20")     # Degrees (-90 to 90)
+tiltResolution.set("4")  # Steps between positions
 maxIntTime.set("2000") # max int time microseconds
 boxcarVal.set("2")
 darkRepVal.set("120")
@@ -589,7 +442,7 @@ def plotGraph(status):
 			statusLabel.config(text="Disconnected")
 			btStart["state"] = "disabled"
 ##		else:
-##			statusLabel.config(text="Ready")
+##			statusLabel.config(text="Ready")	
 		
 	
 def updatePlotRes(event):
@@ -597,6 +450,7 @@ def updatePlotRes(event):
         plotImX = plot_frame.bbox(plot)[2]
         plotImY = plot_frame.bbox(plot)[3]
         plotGraph("Ready")
+
 
 def getSpec():
 	global tt, unitNumber, imLum, imR, imG, imB, imCol, imSatR, imSatB, panStart, panStop, pan_Res, panDim, tiltDim, tiltStart, tiltStop, tilt_Res, tiltRes, scanningFlag, dataString, boxcarN, maxRGB, output, focusPos
@@ -624,14 +478,8 @@ def getSpec():
 		tilt_bot_steps = degreesToSteps(tilt_bot_val)
 		tilt_top_steps = degreesToSteps(tilt_top_val)
 		
-		# Convert resolution from degrees to steps
-		pan_res_deg = float(panRes.get())
-		tilt_res_deg = float(tiltRes.get())
-		pan_res_steps = degreesToSteps(pan_res_deg)
-		tilt_res_steps = degreesToSteps(tilt_res_deg)
-		
 		# note addition of 000 to convert max int to microseconds
-		ts = "h" + str(pan_left_steps) + "," + str(pan_right_steps) + "," + str(pan_res_steps) + "," + str(tilt_bot_steps) + "," + str(tilt_top_steps) + "," + str(tilt_res_steps) + "," + str(maxInt.get()) + "000," + str(boxcar.get()) + "," + str(darkRep.get()) + "000," # note addition of three zeros for darkRep as it's expecing milliseconds
+		ts = "h" + str(pan_left_steps) + "," + str(pan_right_steps) + "," + str(panRes.get()) + "," + str(tilt_bot_steps) + "," + str(tilt_top_steps) + "," + str(tiltRes.get()) + "," + str(maxInt.get()) + "000," + str(boxcar.get()) + "," + str(darkRep.get()) + "000," # note addition of three zeros for darkRep as it's expecing milliseconds
 		#print(ts)
 		if(pan_right_steps > pan_left_steps and tilt_top_steps > tilt_bot_steps): # check pan & tilt coords make sense
 			boxcarN = int(boxcar.get())
@@ -672,7 +520,7 @@ def getSpec():
 					dataString += output + "\n"
 				else:
 					output = "0"
-					print(f"No data received from serial (got: {output})")
+					print("Error reading line")
 			else:
 				output = lines[loadLine]
 	##			print(output)
@@ -750,7 +598,6 @@ def getSpec():
 			loadLine = 0
 			selX = -1
 			selY = -1 # reset these values to clear reflectance too
-			
 			wasStopped = stopFlag == 1
 			stopFlag = 0
 			if wasStopped:
@@ -966,8 +813,10 @@ def togglePreview():
 		preview = 1 #reset set to zero if you want to retain delayed plotting
 
 	if preview == 0:
+		btPreview.config(relief="sunken")
 		btPreview.config(text="Delay")
 	if preview == 1:
+		btPreview.config(relief="raised")
 		btPreview.config(text="RGB")
 	if preview == 2:
 		btPreview.config(text="Sat.")
@@ -1180,21 +1029,23 @@ def setServoAngle(angle):
 
 def openShutter():
 	"""Open the shutter (servo angle 90)"""
-	print(f"openShutter() called - scanningFlag: {scanningFlag}")
 	if(scanningFlag == 0):
-		print("Sending 'open' command to Arduino")
 		safeSerialWrite("open")
-	else:
-		print("Cannot open shutter - system is currently scanning")
 
 def closeShutter():
 	"""Close the shutter (servo angle 60)"""
-	print(f"closeShutter() called - scanningFlag: {scanningFlag}")
 	if(scanningFlag == 0):
-		print("Sending 'close' command to Arduino")
 		safeSerialWrite("close")
-	else:
-		print("Cannot close shutter - system is currently scanning")
+
+def sendCustomCommand():
+	"""Send custom command to Arduino for troubleshooting"""
+	if(scanningFlag == 0):
+		command = customCommandVar.get().strip()
+		if command:
+			safeSerialWrite(command)
+			print(f"Sent custom command: {command}")
+		else:
+			print("Please enter a command")
 
 def degreesToSteps(degrees):
 	"""Convert degrees (-90 to 90) to steps (-512 to 512)"""
@@ -1229,20 +1080,14 @@ def showRes(a,b,c):
 			valid, tilt_to_val = validateDegreeRange(tilt_to_deg, "Tilt To")
 			if not valid: return
 			
-			# Get resolution in degrees and convert to steps
-			pan_res_deg = float(panResolution.get())
-			tilt_res_deg = float(tiltResolution.get())
-			pan_res_steps = degreesToSteps(pan_res_deg)
-			tilt_res_steps = degreesToSteps(tilt_res_deg)
-			
-			# Convert range to steps for calculation
+			# Convert to steps for resolution calculation
 			pan_from_steps = degreesToSteps(pan_from_val)
 			pan_to_steps = degreesToSteps(pan_to_val)
 			tilt_from_steps = degreesToSteps(tilt_from_val)
 			tilt_to_steps = degreesToSteps(tilt_to_val)
 			
-			pan = math.floor( (pan_to_steps - pan_from_steps) / pan_res_steps ) +1
-			tilt = math.floor( (tilt_to_steps - tilt_from_steps) / tilt_res_steps ) +1
+			pan = math.floor( (pan_to_steps - pan_from_steps) / int(panResolution.get()) ) +1
+			tilt = math.floor( (tilt_to_steps - tilt_from_steps) / int(tiltResolution.get()) ) +1
 			ts = str(pan) + "x" + str(tilt)
 			statusLabel.config(text=ts)
 ##			print(ts)
@@ -1348,57 +1193,53 @@ def setReflVal():
 		ts = "Reflectance\nrel. to " + reflVal + "%"
 		outLabel.config(text=ts)
 ##		try:
-		try:
-			if(float(reflVal) > 0 and len(hspec) > 0 and hasattr(hspec, 'shape') and selX != -1 and selY != -1):
-				refs = hspec[selY][selX]
+		if(float(reflVal) > 0 and len(hspec) > 0 and hasattr(hspec, 'shape') and selX != -1 and selY != -1):
+			refs = hspec[selY][selX]
 
-				with np.errstate(divide='ignore', invalid='ignore'):
-					refs = (float(reflVal)/100)/refs # can't deal with zeros
-										
-				btRefl.config(text="Clear Ref.")
-				reflFlag = 1
-				setRefl["state"] = "disabled"
+			with np.errstate(divide='ignore', invalid='ignore'):
+				refs = (float(reflVal)/100)/refs # can't deal with zeros
+									
+			btRefl.config(text="Clear Ref.")
+			reflFlag = 1
+			setRefl["state"] = "disabled"
 
-				# adjust image white-balance
-				wbR = imR[tiltDim-1-selY, selX]
-				wbG = imG[tiltDim-1-selY, selX]
-				wbB = imB[tiltDim-1-selY, selX]
-				wbI = imI[tiltDim-1-selY, selX]
-				wbGG = imGG[tiltDim-1-selY, selX]
-				wbU = imU[tiltDim-1-selY, selX]
-##				print("Raw R:"+str(wbR)+" G:"+str(wbG)+" B:"+str(wbB))
+			# adjust image white-balance
+			wbR = imR[tiltDim-1-selY, selX]
+			wbG = imG[tiltDim-1-selY, selX]
+			wbB = imB[tiltDim-1-selY, selX]
+			wbI = imI[tiltDim-1-selY, selX]
+			wbGG = imGG[tiltDim-1-selY, selX]
+			wbU = imU[tiltDim-1-selY, selX]
+##			print("Raw R:"+str(wbR)+" G:"+str(wbG)+" B:"+str(wbB))
 
-				tmaxRGB = wbR
-				if(wbG > tmaxRGB):
-					tmaxRGB = wbG
-				if(wbB > tmaxRGB):
-					tmaxRGB = wbB
-					
-				wbR = tmaxRGB/wbR
-				wbG = tmaxRGB/wbG
-				wbB = tmaxRGB/wbB
+			tmaxRGB = wbR
+			if(wbG > tmaxRGB):
+				tmaxRGB = wbG
+			if(wbB > tmaxRGB):
+				tmaxRGB = wbB
+				
+			wbR = tmaxRGB/wbR
+			wbG = tmaxRGB/wbG
+			wbB = tmaxRGB/wbB
 
-				tmaxIGU = wbI
-				if(wbGG > tmaxIGU):
-					tmaxIGU = wbGG
-				if(wbU > tmaxIGU):
-					tmaxIGU = wbU
-					
-				wbI = tmaxIGU/wbI
-				wbGG = tmaxIGU/wbGG
-				wbU = tmaxIGU/wbU
-##				print("Multiplier R:"+str(wbR)+" G:"+str(wbG)+" B:"+str(wbB))
-##					
-				plotGraph("Reflectance set")
+			tmaxIGU = wbI
+			if(wbGG > tmaxIGU):
+				tmaxIGU = wbGG
+			if(wbU > tmaxIGU):
+				tmaxIGU = wbU
+				
+			wbI = tmaxIGU/wbI
+			wbGG = tmaxIGU/wbGG
+			wbU = tmaxIGU/wbU
+##			print("Multiplier R:"+str(wbR)+" G:"+str(wbG)+" B:"+str(wbB))
+##				
+			plotGraph("Reflectance set")
 
-			else:
-				clearRefl()
-				ts = "Radiance"
-				outLabel.config(text=ts)
-				# clear reflectance
-		except ValueError:
-			print("Invalid reflectance value entered")
+		else:
 			clearRefl()
+			ts = "Radiance"
+			outLabel.config(text=ts)
+			# clear reflectance
 
 
 
@@ -1555,92 +1396,109 @@ def specOutput():
 ##------------TOP FRAME-------------
 ## ┌ ┐└ ┘ ╬ □ ○
 	
-frame1 = ttk.Frame(root)
-frame1.grid(row=1, column=0, sticky=N+E+W, padx=8, pady=4)
-for i in range(5):
-    frame1.columnconfigure(i, weight=1)  # Make all columns expand equally
+frame1 = Frame(root)
+frame1.grid(row=0, column=0, sticky=N+E+W)
+frame1.rowconfigure(0, weight=1)
+frame1.rowconfigure(1, weight=1)
+frame1.rowconfigure(2, weight=1)
 
-btStart = ttk.Button(frame1, text='Start', width=8, command=lambda: startStop(), state="disabled")  # Increased width
-btStart.grid(row=0, column=0, padx=(0,2), pady=2, sticky=N+S+E+W)
+frame1.columnconfigure(0, weight=0)
+frame1.columnconfigure(1, weight=1)
+frame1.columnconfigure(2, weight=1)
+frame1.columnconfigure(3, weight=1)
+frame1.columnconfigure(4, weight=1)
 
-btTL = ttk.Button(frame1, text="┌", width=4, command=lambda: goTL())
+
+
+btStart = Button(frame1, text='Start', command= lambda: startStop())
+btStart.grid(row=0, column=0, padx=2, pady=2, sticky=N+S+E+W)
+
+btTL = Button(frame1, text="┌", relief="raised", command= lambda: goTL())
 btTL.grid(row=0, column=1, padx=2, pady=2, sticky=N+S+E+W)
 
-tiltTop = ttk.Entry(frame1, textvariable=tiltTo)
-tiltTop.grid(row=0, column=2, padx=2, pady=2, sticky=N+S+E+W)
+tiltTop = Entry(frame1, textvariable = tiltTo, width =11)
+tiltTop.grid(row=0, column=2, padx=2, pady=2, sticky=N+W)
 
-btTR = ttk.Button(frame1, text="┐", width=4, command=lambda: goTR())
+btTR = Button(frame1, text="┐", relief="raised", command= lambda: goTR())
 btTR.grid(row=0, column=3, padx=2, pady=2, sticky=N+S+E+W)
 
-resMsg = ttk.Label(frame1, text="Res.(°)")
-resMsg.grid(row=0, column=4, padx=(2,0), pady=2, sticky=S+W)
+resMsg = Label(frame1, text = "Res.")
+resMsg.grid(row=0, column=4, padx=2, pady=2, sticky=S+W)
 
-btLoad = ttk.Button(frame1, text="Load", width=8, command=lambda: loadFile())  # Added width
+btLoad = Button(frame1, text="Load", relief="raised", command= lambda: loadFile())
 btLoad.grid(row=1, column=0, padx=2, pady=2, sticky=N+S+E+W)
 
-panLeft = ttk.Entry(frame1, textvariable=panFrom)
+panLeft = Entry(frame1, textvariable = panFrom, width =11)
 panLeft.grid(row=1, column=1, padx=2, pady=2, sticky=N+W)
 
-btZero = ttk.Button(frame1, text="○", command=lambda: goZero())
+btZero = Button(frame1, text="○", relief="raised", command= lambda: goZero())
 btZero.grid(row=1, column=2, padx=2, pady=2, sticky=N+S+E+W)
 
-panRight = ttk.Entry(frame1, textvariable=panTo)
+panRight = Entry(frame1, textvariable = panTo, width =11)
 panRight.grid(row=1, column=3, padx=2, pady=2, sticky=N+W)
 
-panRes = ttk.Entry(frame1, textvariable=panResolution)
+panRes = Entry(frame1, textvariable = panResolution, width =11)
 panRes.grid(row=1, column=4, padx=2, pady=2, sticky=N+W)
 
-btPreview = ttk.Button(frame1, text="RGB", width=8, command=lambda: togglePreview())  # Added width
+btPreview = Button(frame1, text="RGB", relief="raised", command= lambda: togglePreview())
 btPreview.grid(row=2, column=0, padx=2, pady=2, sticky=N+S+E+W)
 
-btBL = ttk.Button(frame1, text="└", command=lambda: goBL())
+##statusLabel = Label(frame1, text = "Status", fg="gray", justify="left")
+##statusLabel.grid(row=2, column=0, padx=(5), pady=5, sticky=N+W)
+
+btBL = Button(frame1, text="└", relief="raised", command= lambda: goBL())
 btBL.grid(row=2, column=1, padx=2, pady=2, sticky=N+S+E+W)
 
-tiltBot = ttk.Entry(frame1, textvariable=tiltFrom)
+tiltBot = Entry(frame1, textvariable = tiltFrom, width =11)
 tiltBot.grid(row=2, column=2, padx=2, pady=2, sticky=N+W)
 
-btBR = ttk.Button(frame1, text="┘", command=lambda: goBR())
+btBR = Button(frame1, text="┘", relief="raised", command= lambda: goBR())
 btBR.grid(row=2, column=3, padx=2, pady=2, sticky=N+S+E+W)
 
-tiltRes = ttk.Entry(frame1, textvariable=tiltResolution)
+tiltRes = Entry(frame1, textvariable = tiltResolution, width =11)
 tiltRes.grid(row=2, column=4, padx=2, pady=2, sticky=N+W)
 
+##frame1.grid_propagate(False)
+
 ##---------------FRAME2-----------------
-frame2 = ttk.Frame(root)
-frame2.grid(row=2, column=0, sticky=N+E+W, padx=8, pady=4)
+frame2 = Frame(root)
+frame2.grid(row=1, column=0, sticky=N+E+W)
+frame2.rowconfigure(0, weight=1)
+frame2.rowconfigure(1, weight=1)
 
-# Configure columns to expand equally
-for i in range(4):
-    frame2.columnconfigure(i, weight=1)
+frame2.columnconfigure(0, weight=1)
+frame2.columnconfigure(1, weight=1)
+frame2.columnconfigure(2, weight=1)
+frame2.columnconfigure(3, weight=1)
 
-saveMessage = ttk.Label(frame2, text="File Label")
+saveMessage = Label(frame2, text = "Label")
 saveMessage.grid(row=0, column=0, padx=2, pady=2, sticky=N+W)
 
-maxIntMessage = ttk.Label(frame2, text="MaxInt(ms)")
+maxIntMessage = Label(frame2, text = "MaxInt(ms)") #μ
 maxIntMessage.grid(row=0, column=1, padx=2, pady=2, sticky=N+W)
 
-boxcarMessage = ttk.Label(frame2, text="Boxcar")
+boxcarMessage = Label(frame2, text = "Boxcar")
 boxcarMessage.grid(row=0, column=2, padx=2, pady=2, sticky=N+W)
 
-darkRepMessage = ttk.Label(frame2, text="DarkRep(s)")
+darkRepMessage = Label(frame2, text = "DarkRep(s)")
 darkRepMessage.grid(row=0, column=3, padx=2, pady=2, sticky=N+W)
 
-saveInput = ttk.Entry(frame2, textvariable=saveLabel)
+saveInput = Entry(frame2, textvariable = saveLabel, width =11)
 saveInput.grid(row=1, column=0, padx=2, pady=2, sticky=N+S+E+W)
 
-maxInt = ttk.Entry(frame2, textvariable=maxIntTime)
-maxInt.grid(row=1, column=1, padx=2, pady=2, sticky=N+S+E+W)
+maxInt = Entry(frame2, textvariable = maxIntTime, width =11)
+maxInt.grid(row=1, column=1, padx=2, pady=2, sticky=N+W)
 
-boxcar = ttk.Entry(frame2, textvariable=boxcarVal)
-boxcar.grid(row=1, column=2, padx=2, pady=2, sticky=N+S+E+W)
+boxcar = Entry(frame2, textvariable = boxcarVal, width =11)
+boxcar.grid(row=1, column=2, padx=2, pady=2, sticky=N+W)
 
-darkRep = ttk.Entry(frame2, textvariable=darkRepVal)
-darkRep.grid(row=1, column=3, padx=2, pady=2, sticky=N+S+E+W)
+darkRep = Entry(frame2, textvariable = darkRepVal, width =11)
+darkRep.grid(row=1, column=3, padx=2, pady=2, sticky=N+W)
 
 ##---------------FRAME3-----------------
 
 frame3 = Frame(root)
-frame3.grid(row=3, column=0, sticky=N+E+W)
+frame3.grid(row=2, column=0, sticky=N+E+W)
 
 frame3.columnconfigure(0, weight=1)
 frame3.rowconfigure(0, weight=1)
@@ -1652,130 +1510,114 @@ brightnessScale.grid(row=0, column=0, padx=2, pady=2, sticky=N+W+E)
 statusLabel = Label(frame3, text = "Status", fg="gray", justify="left")
 statusLabel.grid(row=0, column=0, padx=2, pady=2, sticky=N+W)
 
+
 ##------------IMAGE FRAME-------------
 
 plot_frame = Frame(root)
-plot_frame.grid(row=4, column=0, sticky=N+S+E+W)
+plot_frame.grid(row=3, column=0, sticky=N+S+E+W)
+
+
 plot_frame.columnconfigure(0, weight=1)
 plot_frame.rowconfigure(0, weight=1)
 
 plotWidth=400
-try:
-    gridIm = Image.open("grid.png")
-    gridImt = ImageOps.contain(gridIm, (plotWidth,plotWidth), method=0)
-    gridImResized = ImageTk.PhotoImage(gridImt)
-except:
-    # If grid.png doesn't exist, create a simple checkerboard pattern
-    import numpy as np
-    checkerboard = np.zeros((plotWidth, plotWidth, 3), dtype=np.uint8)
-    # Create checkerboard pattern
-    square_size = 20
-    for i in range(0, plotWidth, square_size):
-        for j in range(0, plotWidth, square_size):
-            if (i // square_size + j // square_size) % 2 == 0:
-                checkerboard[i:i+square_size, j:j+square_size] = [200, 200, 200]  # Light gray
-            else:
-                checkerboard[i:i+square_size, j:j+square_size] = [100, 100, 100]  # Dark gray
-    gridIm = Image.fromarray(checkerboard)
-    gridImt = ImageOps.contain(gridIm, (plotWidth,plotWidth), method=0)
-    gridImResized = ImageTk.PhotoImage(gridImt)
+gridIm = Image.open("grid.png")
+gridImt = ImageOps.contain(gridIm, (plotWidth,plotWidth), method=0)
+gridImResized = ImageTk.PhotoImage(gridImt)
+plot = Label(plot_frame, image = gridImResized, fg="gray", justify="left", cursor= "hand2")
 
-plot = Label(plot_frame, image=gridImResized, fg="gray", justify="left", cursor="hand2")
 plot.grid(row=0, column=0, padx=0, pady=0, sticky=N+W+E+S)
 plot.bind('<1>', onmouse) ## mouse click event
 plot_frame.grid_propagate(False)
 
+
 ##------------SPEC PLOT FRAME-------------
 spec_frame = Frame(root)
-spec_frame.grid(row=5, column=0, sticky=N+S+E+W)
+spec_frame.grid(row=4, column=0, sticky=N+S+E+W)
 
 figure = plt.Figure(figsize=(6,3), facecolor='#d9d9d9', tight_layout=True) #figsize=(3,1.5)
 canvas = FigureCanvasTkAgg(figure, spec_frame)
-canvas.get_tk_widget().grid(row=0, column=0, padx=2, pady=2, sticky=N+S+E+W)
+canvas.get_tk_widget().grid(row=0, column=0, padx=2, pady=2, sticky=N+S+W)
 ax = [figure.add_subplot(1, 1, x+1) for x in range(1)]
 
+
 spec_frame.columnconfigure(0, weight=1)
-spec_frame.rowconfigure(0, weight=1)
+spec_frame.columnconfigure(1, weight=0)
+
+##------------REFLECTANCE OUTPUT FRAME-------------
+refl_frame = Frame(spec_frame)
+refl_frame.grid(row=0, column=1, sticky=N+S+E+W)
+
+setRefl = Entry(refl_frame, textvariable = reflVal, width =8)
+setRefl.grid(row=0, column=0, padx=2, pady=2, sticky=N+S+E+W)
+
+btRefl = Button(refl_frame, text="Set Ref.%", command= lambda: setReflVal())
+btRefl.grid(row=0, column=1, padx=2, pady=2, sticky=N+S+E+W)
+
+specOutLabel = Entry(refl_frame, textvariable = specOutVal, width =8)
+specOutLabel.grid(row=1, column=0, padx=2, pady=2, sticky=N+S+E+W)
+
+btSpecOut = Button(refl_frame, text="Exp. Spec", command= lambda: specOutput())
+btSpecOut.grid(row=1, column=1, padx=2, pady=2, sticky=N+S+E+W)
+
+receptorListbox = Listbox(refl_frame, selectmode="multiple", height=6, width=20)
+receptorListbox.grid(row=2, column=0, columnspan=2, padx=2, pady=2, sticky=N+S+E+W)
+
+btImOut = Button(refl_frame, text="Exp. Ims", command= lambda: imageOutput())
+btImOut.grid(row=3, column=0, padx=2, pady=2, sticky=N+S+E+W)
+
+# Add servo control buttons
+servoFrame = Frame(refl_frame)
+servoFrame.grid(row=4, column=0, columnspan=2, padx=2, pady=2, sticky=N+S+E+W)
+
+# Shutter label
+shutterLabel = Label(servoFrame, text="Shutter:")
+shutterLabel.grid(row=0, column=0, padx=2, pady=2, sticky=N+W)
+
+btOpenShutter = Button(servoFrame, text="Open", command= lambda: openShutter())
+btOpenShutter.grid(row=0, column=1, padx=2, pady=2, sticky=N+S+E+W)
+
+btCloseShutter = Button(servoFrame, text="Close", command= lambda: closeShutter())
+btCloseShutter.grid(row=0, column=2, padx=2, pady=2, sticky=N+S+E+W)
+
+# Custom command input for troubleshooting
+customCommandLabel = Label(servoFrame, text="Command:")
+customCommandLabel.grid(row=1, column=0, padx=2, pady=2, sticky=N+W)
+
+customCommandVar = StringVar()
+customCommandVar.set("p90")  # Example command
+customCommandEntry = Entry(servoFrame, textvariable=customCommandVar, width=8)
+customCommandEntry.grid(row=1, column=1, padx=2, pady=2, sticky=N+S+E+W)
+
+btSendCommand = Button(servoFrame, text="Send", command= lambda: sendCustomCommand())
+btSendCommand.grid(row=1, column=2, padx=2, pady=2, sticky=N+S+E+W)
+
+servoFrame.columnconfigure(0, weight=0)  # Shutter label - no expansion
+servoFrame.columnconfigure(1, weight=1)  # Open button
+servoFrame.columnconfigure(2, weight=1)  # Close button
+servoFrame.columnconfigure(3, weight=1)  # Command label
+servoFrame.columnconfigure(4, weight=1)  # Command entry
+servoFrame.columnconfigure(5, weight=1)  # Send button
 
 
+outLabel = Label(refl_frame, text = "Radiance", fg="gray", justify="left")
+outLabel.grid(row=5, column=0, padx=2, pady=2, sticky=N+W)
 
+lumLabel = Label(refl_frame, text = " ", justify="left")
+lumLabel.grid(row=5, column=1, padx=2, pady=2, sticky=N+W)
+
+
+refl_frame.columnconfigure(0, weight=1)
+refl_frame.columnconfigure(1, weight=1)
+
+
+root.rowconfigure(0, weight=0)
+root.rowconfigure(1, weight=0)
+root.rowconfigure(2, weight=0)
+root.rowconfigure(3, weight=1)
+root.rowconfigure(4, weight=0)
+root.columnconfigure(0, weight=1)
 
 root.bind("<Configure>", updatePlotRes) ## resizing the window calls this function
-
-# Serial port selection variables
-serialPortVar = StringVar()
-
-##------------SERIAL CONNECTION FRAME-------------
-serial_frame = ttk.Frame(root)
-serial_frame.grid(row=0, column=0, sticky=N+E+W, padx=8, pady=4)
-serial_frame.columnconfigure(1, weight=1)  # Make dropdown expand
-
-serialLabel = ttk.Label(serial_frame, text="Serial Port:")
-serialLabel.grid(row=0, column=0, padx=(0,2), pady=2, sticky=W)
-
-serialPortDropdown = ttk.Combobox(serial_frame, textvariable=serialPortVar, state="readonly", width=25)
-serialPortDropdown.grid(row=0, column=1, padx=2, pady=2, sticky=W+E)
-
-btScan = ttk.Button(serial_frame, text="Scan", width=6, command=lambda: scanSerialPorts())
-btScan.grid(row=0, column=2, padx=2, pady=2, sticky=W)
-
-btConnect = ttk.Button(serial_frame, text="Connect", width=8, command=lambda: connectSerial())
-btConnect.grid(row=0, column=3, padx=2, pady=2, sticky=W)
-
-btDisconnect = ttk.Button(serial_frame, text="Disconnect", width=10, command=lambda: disconnectSerial(), state="disabled")
-btDisconnect.grid(row=0, column=4, padx=(2,0), pady=2, sticky=W)
-
-##------------CONTROLS FRAME-------------
-controls_frame = ttk.Frame(root)
-controls_frame.grid(row=6, column=0, sticky=N+S+E+W, padx=8, pady=8)
-controls_frame.configure(height=300)  # Increased minimum height
-
-# Configure the main grid for controls
-for i in range(6):  # 6 columns for better organization
-    controls_frame.columnconfigure(i, weight=1)
-
-# Initialize control variables
-
-# Row 0: Reflectance and Export controls
-ttk.Label(controls_frame, text="Reflectance:").grid(row=0, column=0, padx=4, pady=4, sticky=W)
-setRefl = ttk.Entry(controls_frame, textvariable=reflVal, width=8)
-setRefl.grid(row=0, column=1, padx=4, pady=4, sticky=W+E)
-btRefl = ttk.Button(controls_frame, text="Set Ref.%", command=lambda: setReflVal(), width=10)
-btRefl.grid(row=0, column=2, padx=4, pady=4, sticky=W+E)
-
-ttk.Label(controls_frame, text="Column Label:").grid(row=0, column=3, padx=4, pady=4, sticky=W)
-specOutLabel = ttk.Entry(controls_frame, textvariable=specOutVal, width=10)
-specOutLabel.grid(row=0, column=4, padx=4, pady=4, sticky=W+E)
-btSpecOut = ttk.Button(controls_frame, text="Export Spectrum", command=lambda: specOutput(), width=10)
-btSpecOut.grid(row=0, column=5, padx=4, pady=4, sticky=W+E)
-
-# Row 1: Shutter and Export Images controls
-ttk.Label(controls_frame, text="Shutter:").grid(row=1, column=0, padx=4, pady=4, sticky=W)
-btOpenShutter = ttk.Button(controls_frame, text="Open", command=lambda: openShutter(), width=8)
-btOpenShutter.grid(row=1, column=1, padx=4, pady=4, sticky=W+E)
-btCloseShutter = ttk.Button(controls_frame, text="Close", command=lambda: closeShutter(), width=8)
-btCloseShutter.grid(row=1, column=2, padx=4, pady=4, sticky=W+E)
-
-# Empty space for alignment
-ttk.Label(controls_frame, text="").grid(row=1, column=3, padx=4, pady=4)
-# Export Images button spanning two columns for better balance
-btImOut = ttk.Button(controls_frame, text="Export Images", command=lambda: imageOutput(), width=15)
-btImOut.grid(row=1, column=4, columnspan=2, padx=4, pady=4, sticky=W+E)
-
-# Row 2: Status labels (centered across all columns)
-outLabel = ttk.Label(controls_frame, text="Radiance", font=('System', 12, 'bold'))
-outLabel.grid(row=2, column=0, columnspan=6, padx=4, pady=(16,4), sticky=N)
-
-lumLabel = ttk.Label(controls_frame, text=" ")
-lumLabel.grid(row=3, column=0, columnspan=6, padx=4, pady=4, sticky=N)
-
-# Row 4: Receptor list (full width)
-ttk.Label(controls_frame, text="Receptors:").grid(row=4, column=0, columnspan=6, padx=4, pady=(8,2), sticky=W)
-receptorListbox = Listbox(controls_frame, selectmode="multiple", bg=COLORS['input_bg'], fg=COLORS['input_fg'])
-receptorListbox.grid(row=5, column=0, columnspan=6, padx=4, pady=(2,8), sticky=E+W+N+S)
-
-# Make the listbox row expandable and give the controls frame some height
-controls_frame.rowconfigure(5, weight=1)
-controls_frame.configure(height=350)  # Increase height to give more room for receptors
 
 root.mainloop()
