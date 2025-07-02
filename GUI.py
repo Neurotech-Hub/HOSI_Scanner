@@ -2,6 +2,7 @@ from tkinter import *
 from tkinter import filedialog as fd
 from tkinter import messagebox
 from tkinter import ttk
+from tkinter import scrolledtext
 import numpy as np
 from PIL import Image, ImageTk, ImageOps
 import string, time, os, sys, math
@@ -369,10 +370,11 @@ def unitSetup():
 					receptorVals.append(floatVals)
 
 	
-	receptorListbox.delete(0, "end")  # Clear current listbox
-	for item in receptorNames:  # Insert new options
-		# ~ print(item)
-		receptorListbox.insert("end", item)
+	# COMMENTED OUT WITH RECEPTOR FUNCTIONALITY
+	# receptorListbox.delete(0, "end")  # Clear current listbox
+	# for item in receptorNames:  # Insert new options
+	# 	# ~ print(item)
+	# 	receptorListbox.insert("end", item)
 
 
 	
@@ -1297,22 +1299,59 @@ def onmouse(event):
 		
 
 	if(len(hspec)>0 and hasattr(hspec, 'shape')):
-		ts = "x:" + str(selX) + " y:" + str(selY) + "\npan:" + str(panStart+pan_Res*selX) + " tilt:" + str(tiltStart+tilt_Res*selY)
-		outLabel.config(text=ts)
+		# Update position label
+		posLabel.config(text=f"Position: x:{selX} y:{selY} (pan:{panStart+pan_Res*selX}° tilt:{tiltStart+tilt_Res*selY}°)")
+		
+		# Update luminance label
 		if(imLum[selY, selX] > 0.1):
-			ts = "Lum (cd.m-2):\n" + f'{imLum[selY, selX]:.3f}'
+			lumLabel.config(text=f"Luminance: {imLum[selY, selX]:.3f} cd/m²")
 		else:
-			ts = "Lum (cd.m-2):\n" + f'{imLum[selY, selX]:.3e}'
-		# ~ ts = "lum (cd.m-2):\n" + str(imLum[selY, selX])
-		lumLabel.config(text=ts)
+			lumLabel.config(text=f"Luminance: {imLum[selY, selX]:.3e} cd/m²")
 ##		print("plot update")
 		le = hspec[selY][selX]
 		if(reflFlag == 1):
 			with np.errstate(invalid='ignore'):
 				le = le*100*refs
 		[ax[i].clear() for i in range(1)]
-		ax[0].plot(wavelengthBoxcar,le)
+		
+		# Find peak wavelength
+		peak_idx = np.argmax(le)
+		peak_wavelength = wavelengthBoxcar[peak_idx]
+		peak_value = le[peak_idx]
+		
+		# Create the main plot
+		ax[0].plot(wavelengthBoxcar, le, 'b-', linewidth=2, label='Spectrum')
+		
+		# Mark the peak
+		ax[0].plot(peak_wavelength, peak_value, 'ro', markersize=8, label=f'Peak: {peak_wavelength:.1f} nm')
+		
+		# Set labels and title
+		ax[0].set_xlabel('Wavelength (nm)', fontsize=10, fontweight='bold')
+		if(reflFlag == 1):
+			ax[0].set_ylabel('Reflectance (%)', fontsize=10, fontweight='bold')
+			ax[0].set_title(f'Reflectance Spectrum - Pixel ({selX}, {selY})', fontsize=11, fontweight='bold')
+		else:
+			ax[0].set_ylabel('Radiance (W·sr⁻¹·m⁻²·nm⁻¹)', fontsize=10, fontweight='bold')
+			ax[0].set_title(f'Radiance Spectrum - Pixel ({selX}, {selY})', fontsize=11, fontweight='bold')
+		
+		# Add grid
+		ax[0].grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+		ax[0].grid(True, alpha=0.2, linestyle='--', linewidth=0.3, which='minor')
+		
+		# Set axis limits
 		ax[0].set_ylim(ymin=0)
+		ax[0].set_xlim(min(wavelengthBoxcar), max(wavelengthBoxcar))
+		
+		# Add legend
+		ax[0].legend(loc='upper right', fontsize=9)
+		
+		# Improve tick formatting
+		ax[0].tick_params(axis='both', which='major', labelsize=9)
+		ax[0].tick_params(axis='both', which='minor', labelsize=8)
+		
+		# Add minor ticks
+		ax[0].minorticks_on()
+		
 		canvas.draw()
 		btSpecOut["state"] = "active"
 
@@ -1345,8 +1384,7 @@ def setReflVal():
 	if(reflFlag == 0):
 		reflVal = setRefl.get()
 		print("Reflectance standard set to " + reflVal + "%")
-		ts = "Reflectance\nrel. to " + reflVal + "%"
-		outLabel.config(text=ts)
+		typeLabel.config(text=f"Mode: Reflectance ({reflVal}%)")
 ##		try:
 		try:
 			if(float(reflVal) > 0 and len(hspec) > 0 and hasattr(hspec, 'shape') and selX != -1 and selY != -1):
@@ -1393,8 +1431,7 @@ def setReflVal():
 
 			else:
 				clearRefl()
-				ts = "Radiance"
-				outLabel.config(text=ts)
+				typeLabel.config(text="Mode: Radiance")
 				# clear reflectance
 		except ValueError:
 			print("Invalid reflectance value entered")
@@ -1407,6 +1444,7 @@ def clearRefl():
 	btRefl.config(text="Set Ref.%")
 	reflFlag = 0
 	setRefl["state"] = "normal"
+	typeLabel.config(text="Mode: Radiance")
 	wbR = 1.0 # reset white balance
 	wbG = 1.0
 	wbB = 1.0
@@ -1417,9 +1455,172 @@ def clearRefl():
 ##		print("plot update")
 		le = hspec[selY][selX]
 		[ax[i].clear() for i in range(1)]
-		ax[0].plot(wavelengthBoxcar,le)
+		
+		# Find peak wavelength
+		peak_idx = np.argmax(le)
+		peak_wavelength = wavelengthBoxcar[peak_idx]
+		peak_value = le[peak_idx]
+		
+		# Create the main plot
+		ax[0].plot(wavelengthBoxcar, le, 'b-', linewidth=2, label='Spectrum')
+		
+		# Mark the peak
+		ax[0].plot(peak_wavelength, peak_value, 'ro', markersize=8, label=f'Peak: {peak_wavelength:.1f} nm')
+		
+		# Set labels and title
+		ax[0].set_xlabel('Wavelength (nm)', fontsize=10, fontweight='bold')
+		ax[0].set_ylabel('Radiance (W·sr⁻¹·m⁻²·nm⁻¹)', fontsize=10, fontweight='bold')
+		ax[0].set_title(f'Radiance Spectrum - Pixel ({selX}, {selY})', fontsize=11, fontweight='bold')
+		
+		# Add grid
+		ax[0].grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+		ax[0].grid(True, alpha=0.2, linestyle='--', linewidth=0.3, which='minor')
+		
+		# Set axis limits
+		ax[0].set_ylim(ymin=0)
+		ax[0].set_xlim(min(wavelengthBoxcar), max(wavelengthBoxcar))
+		
+		# Add legend
+		ax[0].legend(loc='upper right', fontsize=9)
+		
+		# Improve tick formatting
+		ax[0].tick_params(axis='both', which='major', labelsize=9)
+		ax[0].tick_params(axis='both', which='minor', labelsize=8)
+		
+		# Add minor ticks
+		ax[0].minorticks_on()
+		
 		canvas.draw()
 	plotGraph("Reflectance cleared")
+
+def showInfo():
+	"""Display information window with usage instructions and tool details"""
+	info_window = Toplevel(root)
+	info_window.title("HOSI Scanner - Information")
+	info_window.geometry("800x600")
+	info_window.resizable(True, True)
+	
+	# Create scrolled text widget
+	text_widget = scrolledtext.ScrolledText(info_window, wrap=WORD, font=('Arial', 11), padx=10, pady=10)
+	text_widget.pack(fill=BOTH, expand=True, padx=10, pady=10)
+	
+	# Information content
+	info_text = """HOSI Scanner - Hyperspectral Imaging System
+Version 2.0
+
+🔬 OVERVIEW
+This is a hyperspectral imaging system designed for spectral data acquisition and analysis using the Hamamatsu C12880MA spectrometer. The system provides real-time spectral visualization, reflectance calibration, and patient safety monitoring.
+
+📋 FEATURES
+• Hyperspectral scanning with pan/tilt gimbal control
+• Real-time spectral data visualization with peak detection
+• Interactive spectral plot with crosshair wavelength identification
+• Multiple image preview modes (RGB, Saturation, IGU, NDVI)
+• Reflectance calibration using white reference standards
+• Luminance monitoring for patient safety (cd/m²)
+• Spectral data export to CSV format
+• Serial port management for Arduino control
+
+🚀 QUICK START GUIDE
+
+1. CONNECT HARDWARE:
+   • Connect Arduino via USB
+   • Upload HOSI_Scanner.ino firmware to Arduino
+   • Ensure gimbal and spectrometer are properly connected
+
+2. ESTABLISH CONNECTION:
+   • Click "Scan" to find available serial ports
+   • Select your Arduino port from dropdown
+   • Click "Connect" to establish communication
+   • "Start" button will enable when connected
+
+3. CONFIGURE SCAN PARAMETERS:
+   • Pan/Tilt ranges: Set angular limits in degrees (-90° to +90°)
+   • Resolution: Set step size in degrees (e.g., 2° for fine scans)
+   • Integration time: Adjust for lighting conditions (ms)
+   • Boxcar: Spectral averaging parameter
+   • Dark repeat: Background measurement interval
+
+4. PERFORM SCAN:
+   • Set file label for data organization
+   • Click "Start" to begin hyperspectral acquisition
+   • Monitor progress and preview in real-time
+   • Click "Stop" to halt scan if needed
+
+5. ANALYZE DATA:
+   • Click on any pixel in the scanned image to view spectrum
+   • Peak wavelength is automatically identified and marked
+   • Click on spectral plot to get precise wavelength readings
+   • Position and luminance information displayed at bottom
+
+📊 REFLECTANCE CALIBRATION
+
+For quantitative reflectance measurements:
+1. Include a white reference standard (e.g., 99% Spectralon) in your scene
+2. Complete a full radiance scan
+3. Click on the white reference pixel in the image
+4. Enter the known reflectance value (e.g., "99")
+5. Click "Set Ref.%" to calibrate
+6. All subsequent measurements show relative reflectance
+
+The mode indicator will change from "Radiance" to "Reflectance (99%)" when active.
+
+⚕️ PATIENT SAFETY
+
+The luminance display shows brightness in cd/m² for safety monitoring:
+• Values update in real-time when clicking pixels
+• Critical for ophthalmic applications
+• Typical safety thresholds:
+  - Class 1 LED: <100 cd/m² (no time limit)
+  - Photochemical hazard: <10,000 cd·s/m² (blue weighted)
+
+🎯 INTERFACE CONTROLS
+
+• Corner Buttons (┌┐└┘): Move gimbal to scan area corners
+• Center Button (○): Return gimbal to home position
+• RGB Button: Toggle between display modes
+• Brightness Slider: Adjust image display intensity
+• Shutter Controls: Open/close optical shutter
+
+💾 DATA EXPORT
+
+• Export Spectrum: Save selected pixel spectrum to CSV
+• Automatic Saving: Complete scans auto-save with timestamp
+• File Organization: All data saved to ./scans/ directory
+
+🔧 SERIAL COMMANDS
+
+Manual control via serial terminal (115200 baud):
+• p<value>: Pan control (e.g., p100)
+• l<value>: Tilt control (e.g., l500)  
+• t<microseconds>: Set integration time
+• r: Single measurement
+• open/close: Shutter control
+• stop: Emergency stop
+
+⚠️ TROUBLESHOOTING
+
+• Connection Issues: Use "Scan" button to refresh ports
+• Missing Data: Ensure calibration_data.txt is present
+• UI Problems: Requires Python 3.11+ on macOS
+• Serial Errors: Check Arduino firmware upload
+
+📁 FILES STRUCTURE
+
+• GUI.py: Main application
+• calibration_data.txt: Spectrometer calibration
+• sensitivity_data.csv: Spectral response functions
+• ./scans/: Output directory for data files
+
+This tool is designed for research and educational use in spectral imaging applications."""
+
+	# Insert text and make it read-only
+	text_widget.insert(1.0, info_text)
+	text_widget.config(state=DISABLED)
+	
+	# Add close button
+	close_button = ttk.Button(info_window, text="Close", command=info_window.destroy)
+	close_button.pack(pady=10)
 
 
 
@@ -1444,59 +1645,60 @@ def startStop():
 		return
 	
 
-def imageOutput():
-	print("Outputting selected cone-catch images");
-	for item in receptorListbox.curselection():
-		#print("item: "+ str(item))
-		print(receptorNames[item])
-	
-		#------resample spectral sensitivities at spectrometer wavelengths---------
-		recept = [0.0] * pixels
-		rSum = 0.0
-		for i in range(0,pixels):
-			# ~ for j in range(0, len(cieWav)):
-			for j in range(0, len(receptorVals[item])):
-				if(round(wavelength[i]) == cieWav[j]):
-					recept[i] = receptorVals[item][j]
-					rSum += recept[i]
-					
-		# ~ for i in range(0,pixels):
-			# ~ recept[i] = recept[i]/rSum #  normalise to area under curve = 1
-		
-		# ~ print(recept)
-		imOut = np.zeros([tiltDim, panDim])
-		
-		# ~ pes = [(6.626E-34 * 2.998E8) / (x*1E-9) for x in wavelengthBoxcar] # energy per photon at each wavelength
-		pes = [(1E18 * 6.626E-34 * 2.998E8) / (x*1E-9) for x in wavelengthBoxcar] # energy per photon at each wavelength - SCALED (multiplied by 1E18 to give more sensible ouput given 32-bit floating point range limits
-		#print(pes)
-		
-		for y in range(0, tiltDim):
-			for x in range(0, panDim):
-				leSum = 0.0
-				le = hspec[y][x]
-				if(reflFlag == 1):
-					with np.errstate(invalid='ignore'):
-						le = le*100*refs
-				# ~ print(str(len(le)))
-				
-				for z in range(0, len(le)):
-					for b in range(0, boxcarN):
-						# ~ leSum += le[z] * recept[b + z*boxcarN] * wavelengthBins[b + z*boxcarN] # correct for differences in bin-width (area-under curve)
-						leSum += (le[z]/pes[z]) * recept[b + z*boxcarN] * wavelengthBins[b + z*boxcarN] # correct for differences in bin-width (area-under curve)
-
-				imOut[tiltDim-y-1, x] = leSum
-
-				# ~ print("x: "+ str(x) + " y: " + str(y) + " val: " + str(leSum))
-		# ~ print(imOut)
-		img = Image.fromarray(imOut)
-		
-		if fileImportFlag == 1:
-			ts = loadPath.replace('.csv', '')
-		else:
-			ts = ct
-		print(ts)
-		ts = ts + "_" + receptorNames[item] + ".tif"
-		img.save(ts)
+# COMMENTED OUT FOR LATER USE - RECEPTOR-BASED IMAGE OUTPUT FUNCTION
+# def imageOutput():
+# 	print("Outputting selected cone-catch images");
+# 	for item in receptorListbox.curselection():
+# 		#print("item: "+ str(item))
+# 		print(receptorNames[item])
+# 	
+# 		#------resample spectral sensitivities at spectrometer wavelengths---------
+# 		recept = [0.0] * pixels
+# 		rSum = 0.0
+# 		for i in range(0,pixels):
+# 			# ~ for j in range(0, len(cieWav)):
+# 			for j in range(0, len(receptorVals[item])):
+# 				if(round(wavelength[i]) == cieWav[j]):
+# 					recept[i] = receptorVals[item][j]
+# 					rSum += recept[i]
+# 					
+# 		# ~ for i in range(0,pixels):
+# 			# ~ recept[i] = recept[i]/rSum #  normalise to area under curve = 1
+# 		
+# 		# ~ print(recept)
+# 		imOut = np.zeros([tiltDim, panDim])
+# 		
+# 		# ~ pes = [(6.626E-34 * 2.998E8) / (x*1E-9) for x in wavelengthBoxcar] # energy per photon at each wavelength
+# 		pes = [(1E18 * 6.626E-34 * 2.998E8) / (x*1E-9) for x in wavelengthBoxcar] # energy per photon at each wavelength - SCALED (multiplied by 1E18 to give more sensible ouput given 32-bit floating point range limits
+# 		#print(pes)
+# 		
+# 		for y in range(0, tiltDim):
+# 			for x in range(0, panDim):
+# 				leSum = 0.0
+# 				le = hspec[y][x]
+# 				if(reflFlag == 1):
+# 					with np.errstate(invalid='ignore'):
+# 						le = le*100*refs
+# 				# ~ print(str(len(le)))
+# 				
+# 				for z in range(0, len(le)):
+# 					for b in range(0, boxcarN):
+# 						# ~ leSum += le[z] * recept[b + z*boxcarN] * wavelengthBins[b + z*boxcarN] # correct for differences in bin-width (area-under curve)
+# 						leSum += (le[z]/pes[z]) * recept[b + z*boxcarN] * wavelengthBins[b + z*boxcarN] # correct for differences in bin-width (area-under curve)
+# 
+# 				imOut[tiltDim-y-1, x] = leSum
+# 
+# 				# ~ print("x: "+ str(x) + " y: " + str(y) + " val: " + str(leSum))
+# 		# ~ print(imOut)
+# 		img = Image.fromarray(imOut)
+# 		
+# 		if fileImportFlag == 1:
+# 			ts = loadPath.replace('.csv', '')
+# 		else:
+# 			ts = ct
+# 		print(ts)
+# 		ts = ts + "_" + receptorNames[item] + ".tif"
+# 		img.save(ts)
 
 		
 def specOutput():
@@ -1694,6 +1896,65 @@ canvas = FigureCanvasTkAgg(figure, spec_frame)
 canvas.get_tk_widget().grid(row=0, column=0, padx=2, pady=2, sticky=N+S+E+W)
 ax = [figure.add_subplot(1, 1, x+1) for x in range(1)]
 
+# Global variables for crosshair
+crosshair_vline = None
+crosshair_text = None
+
+def on_plot_click(event):
+	"""Handle clicks on the spectral plot to show wavelength crosshair"""
+	global crosshair_vline, crosshair_text
+	
+	if event.inaxes == ax[0] and len(hspec) > 0 and hasattr(hspec, 'shape'):
+		# Clear previous crosshair by removing from axes lines and texts collections
+		if crosshair_vline:
+			try:
+				crosshair_vline.remove()
+			except:
+				# If remove fails, clear from lines collection
+				if crosshair_vline in ax[0].lines:
+					ax[0].lines.remove(crosshair_vline)
+		
+		if crosshair_text:
+			try:
+				crosshair_text.remove()
+			except:
+				# If remove fails, clear from texts collection
+				if crosshair_text in ax[0].texts:
+					ax[0].texts.remove(crosshair_text)
+		
+		# Get clicked wavelength
+		wavelength_clicked = event.xdata
+		
+		if wavelength_clicked is not None:
+			# Find closest wavelength in our data
+			closest_idx = np.argmin(np.abs(np.array(wavelengthBoxcar) - wavelength_clicked))
+			closest_wavelength = wavelengthBoxcar[closest_idx]
+			
+			# Get the spectrum value at this wavelength
+			le = hspec[selY][selX]
+			if(reflFlag == 1):
+				with np.errstate(invalid='ignore'):
+					le = le*100*refs
+			spectrum_value = le[closest_idx]
+			
+			# Add vertical line at clicked wavelength
+			crosshair_vline = ax[0].axvline(x=closest_wavelength, color='red', linestyle='--', alpha=0.8, linewidth=2)
+			
+			# Add text annotation
+			crosshair_text = ax[0].annotate(
+				f'{closest_wavelength:.1f} nm\n{spectrum_value:.3e}',
+				xy=(closest_wavelength, spectrum_value),
+				xytext=(10, 10), textcoords='offset points',
+				bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.8),
+				fontsize=9, fontweight='bold'
+			)
+			
+			canvas.draw()
+			print(f"Clicked wavelength: {closest_wavelength:.1f} nm, Value: {spectrum_value:.3e}")
+
+# Connect the click event to the plot
+canvas.mpl_connect('button_press_event', on_plot_click)
+
 spec_frame.columnconfigure(0, weight=1)
 spec_frame.rowconfigure(0, weight=1)
 
@@ -1749,33 +2010,47 @@ specOutLabel.grid(row=0, column=4, padx=4, pady=4, sticky=W+E)
 btSpecOut = ttk.Button(controls_frame, text="Export Spectrum", command=lambda: specOutput(), width=10)
 btSpecOut.grid(row=0, column=5, padx=4, pady=4, sticky=W+E)
 
-# Row 1: Shutter and Export Images controls
+# Row 1: Shutter and Info controls
 ttk.Label(controls_frame, text="Shutter:").grid(row=1, column=0, padx=4, pady=4, sticky=W)
 btOpenShutter = ttk.Button(controls_frame, text="Open", command=lambda: openShutter(), width=8)
 btOpenShutter.grid(row=1, column=1, padx=4, pady=4, sticky=W+E)
 btCloseShutter = ttk.Button(controls_frame, text="Close", command=lambda: closeShutter(), width=8)
 btCloseShutter.grid(row=1, column=2, padx=4, pady=4, sticky=W+E)
 
-# Empty space for alignment
-ttk.Label(controls_frame, text="").grid(row=1, column=3, padx=4, pady=4)
-# Export Images button spanning two columns for better balance
-btImOut = ttk.Button(controls_frame, text="Export Images", command=lambda: imageOutput(), width=15)
-btImOut.grid(row=1, column=4, columnspan=2, padx=4, pady=4, sticky=W+E)
+# Info button
+ttk.Label(controls_frame, text="Help:").grid(row=1, column=3, padx=4, pady=4, sticky=W)
+btInfo = ttk.Button(controls_frame, text="Info", command=lambda: showInfo(), width=12)
+btInfo.grid(row=1, column=4, columnspan=2, padx=4, pady=4, sticky=W+E)
 
-# Row 2: Status labels (centered across all columns)
-outLabel = ttk.Label(controls_frame, text="Radiance", font=('System', 12, 'bold'))
-outLabel.grid(row=2, column=0, columnspan=6, padx=4, pady=(16,4), sticky=N)
+# Export Images button spanning two columns for better balance - COMMENTED OUT (USES RECEPTORS)
+# btImOut = ttk.Button(controls_frame, text="Export Images", command=lambda: imageOutput(), width=15)
+# btImOut.grid(row=1, column=4, columnspan=2, padx=4, pady=4, sticky=W+E)
 
-lumLabel = ttk.Label(controls_frame, text=" ")
-lumLabel.grid(row=3, column=0, columnspan=6, padx=4, pady=4, sticky=N)
+# Row 2: Status display (properly formatted, always visible)
+status_frame = ttk.Frame(controls_frame)
+status_frame.grid(row=2, column=0, columnspan=6, padx=4, pady=(16,4), sticky=N+S+E+W)
+status_frame.columnconfigure(0, weight=1)
+status_frame.columnconfigure(1, weight=1)
+status_frame.columnconfigure(2, weight=1)
 
-# Row 4: Receptor list (full width)
-ttk.Label(controls_frame, text="Receptors:").grid(row=4, column=0, columnspan=6, padx=4, pady=(8,2), sticky=W)
-receptorListbox = Listbox(controls_frame, selectmode="multiple", bg=COLORS['input_bg'], fg=COLORS['input_fg'])
-receptorListbox.grid(row=5, column=0, columnspan=6, padx=4, pady=(2,8), sticky=E+W+N+S)
+# Position and measurement type
+posLabel = ttk.Label(status_frame, text="Position: --", font=('System', 12, 'bold'))
+posLabel.grid(row=0, column=0, padx=4, pady=2, sticky=N)
 
-# Make the listbox row expandable and give the controls frame some height
-controls_frame.rowconfigure(5, weight=1)
+typeLabel = ttk.Label(status_frame, text="Mode: Radiance", font=('System', 12, 'bold'))
+typeLabel.grid(row=0, column=1, padx=4, pady=2, sticky=N)
+
+# Luminance display
+lumLabel = ttk.Label(status_frame, text="Luminance: --", font=('System', 12, 'bold'))
+lumLabel.grid(row=0, column=2, padx=4, pady=2, sticky=N)
+
+# Row 4: Receptor list (full width) - COMMENTED OUT FOR LATER USE
+# ttk.Label(controls_frame, text="Receptors:").grid(row=4, column=0, columnspan=6, padx=4, pady=(8,2), sticky=W)
+# receptorListbox = Listbox(controls_frame, selectmode="multiple", bg=COLORS['input_bg'], fg=COLORS['input_fg'])
+# receptorListbox.grid(row=5, column=0, columnspan=6, padx=4, pady=(2,8), sticky=E+W+N+S)
+
+# Make the listbox row expandable and give the controls frame some height - COMMENTED OUT WITH RECEPTORS
+# controls_frame.rowconfigure(5, weight=1)
 controls_frame.configure(height=350)  # Increase height to give more room for receptors
 
 root.mainloop()
