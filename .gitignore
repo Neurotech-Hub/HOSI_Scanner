@@ -128,3 +128,5 @@ scans/
 *.tif
 *.jpg
 *.jpeg
+test_serial.py
+SERIAL_DEBUGGING_GUIDE.md

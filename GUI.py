@@ -1,5 +1,6 @@
 from tkinter import *
 from tkinter import filedialog as fd
+from tkinter import messagebox
 import numpy as np
 from PIL import Image, ImageTk, ImageOps
 import string, time, os, sys, math
@@ -19,14 +20,9 @@ else:
 
 ser = None
 
-
-
-
-
 root = Tk()
 root.geometry('600x800')
 root.title('HOSI')
-
 
 np.set_printoptions(suppress=False, precision=3, threshold=sys.maxsize, linewidth=sys.maxsize)
 
@@ -64,6 +60,41 @@ visSystems = []
 receptorNames = []
 receptorVals = []
 baudrate = 115200
+
+# Add serial logging
+def logSerial(message, direction="OUT"):
+    """Log serial communication for debugging"""
+    timestamp = time.strftime("%H:%M:%S")
+    print(f"[{timestamp}] {direction}: {message}")
+
+def safeSerialWrite(data):
+    """Safely write to serial with logging and error handling"""
+    if ser is None:
+        print("ERROR: Serial connection not available")
+        return False
+    try:
+        logSerial(data, "OUT")
+        ser.write(str.encode(data))
+        return True
+    except Exception as e:
+        print(f"ERROR writing to serial: {e}")
+        return False
+
+def safeSerialRead():
+    """Safely read from serial with logging and error handling"""
+    if ser is None:
+        print("ERROR: Serial connection not available")
+        return None
+    try:
+        data = ser.readline()
+        if data:
+            decoded = data.decode('utf-8', 'replace').strip()
+            logSerial(decoded, "IN")
+            return decoded
+        return None
+    except Exception as e:
+        print(f"ERROR reading from serial: {e}")
+        return None
 
 def connect():
 	global ser, serialName
@@ -184,7 +215,6 @@ def unitSetup():
 					cieZ = readLine(row)
 				elif(row[1] == "nUV"):
 					nUV = readLine(row)
-			
 			else:
 					receptorNames.append(row[0] +"_" + row[1])
 					floatVals = row[2:]
@@ -250,12 +280,12 @@ darkRepVal = StringVar()
 reflVal = StringVar()
 specOutVal = StringVar()
 
-panFrom.set("-20")
-panTo.set("20")
-panResolution.set("4")
-tiltFrom.set("480")
-tiltTo.set("520")
-tiltResolution.set("4")
+panFrom.set("-20")  # Degrees (-90 to 90)
+panTo.set("20")     # Degrees (-90 to 90)
+panResolution.set("4")  # Steps between positions
+tiltFrom.set("-20")  # Degrees (-90 to 90)
+tiltTo.set("20")     # Degrees (-90 to 90)
+tiltResolution.set("4")  # Steps between positions
 maxIntTime.set("2000") # max int time microseconds
 boxcarVal.set("2")
 darkRepVal.set("120")
@@ -426,14 +456,36 @@ def getSpec():
 	global tt, unitNumber, imLum, imR, imG, imB, imCol, imSatR, imSatB, panStart, panStop, pan_Res, panDim, tiltDim, tiltStart, tiltStop, tilt_Res, tiltRes, scanningFlag, dataString, boxcarN, maxRGB, output, focusPos
 	global imI, imU, imGG, imChlA, imChlB, imNDVI, maxIGU, hspec, hspecPan, hspecTilt, fileImportFlag, loadPath, loadLine, lines, selX, selY, wavelengthBoxcar, stopFlag, ct
 	if(scanningFlag == 0 and fileImportFlag == 0): # start scanning
+		# Validate and convert degree inputs to steps
+		pan_left_deg = panLeft.get()
+		pan_right_deg = panRight.get()
+		tilt_bot_deg = tiltBot.get()
+		tilt_top_deg = tiltTop.get()
+		
+		# Validate all inputs
+		valid, pan_left_val = validateDegreeRange(pan_left_deg, "Pan Left")
+		if not valid: return
+		valid, pan_right_val = validateDegreeRange(pan_right_deg, "Pan Right")
+		if not valid: return
+		valid, tilt_bot_val = validateDegreeRange(tilt_bot_deg, "Tilt Bottom")
+		if not valid: return
+		valid, tilt_top_val = validateDegreeRange(tilt_top_deg, "Tilt Top")
+		if not valid: return
+		
+		# Convert to steps
+		pan_left_steps = degreesToSteps(pan_left_val)
+		pan_right_steps = degreesToSteps(pan_right_val)
+		tilt_bot_steps = degreesToSteps(tilt_bot_val)
+		tilt_top_steps = degreesToSteps(tilt_top_val)
+		
 		# note addition of 000 to convert max int to microseconds
-		ts = "h" + str(panLeft.get()) + "," + str(panRight.get()) + "," + str(panRes.get()) + "," + str(tiltBot.get()) + "," + str(tiltTop.get()) + "," + str(tiltRes.get()) + "," + str(maxInt.get()) + "000," + str(boxcar.get()) + "," + str(darkRep.get()) + "000," # note addition of three zeros for darkRep as it's expecing milliseconds
+		ts = "h" + str(pan_left_steps) + "," + str(pan_right_steps) + "," + str(panRes.get()) + "," + str(tilt_bot_steps) + "," + str(tilt_top_steps) + "," + str(tiltRes.get()) + "," + str(maxInt.get()) + "000," + str(boxcar.get()) + "," + str(darkRep.get()) + "000," # note addition of three zeros for darkRep as it's expecing milliseconds
 		#print(ts)
-		if(int(panRight.get()) > int(panLeft.get()) and int(tiltTop.get()) > int(tiltBot.get())): # check pan & tilt coords make sense
+		if(pan_right_steps > pan_left_steps and tilt_top_steps > tilt_bot_steps): # check pan & tilt coords make sense
 			boxcarN = int(boxcar.get())
 			#updateStatus(ts)
 			statusLabel.config(text="Starting")
-			ser.write(str.encode( ts ))
+			safeSerialWrite( ts )
 			#btStart["state"] = "disabled"
 			btLoad["state"] = "disabled"
 			btStart["text"] = "Stop"
@@ -459,13 +511,14 @@ def getSpec():
 		if(stopFlag == 1):
 			output = "x"
 			dataString += output
+			# Set serFlag to 1 to exit the loop when stopping
+			serFlag = 1
 		else:
 			if(fileImportFlag == 0):
-				output = ser.readline()
-				try:
-					output = output.decode('utf-8', 'replace')
-					dataString += output
-				except:
+				output = safeSerialRead()
+				if output:
+					dataString += output + "\n"
+				else:
 					output = "0"
 					print("Error reading line")
 			else:
@@ -478,7 +531,10 @@ def getSpec():
 
 		if(output.startswith('x')):
 ##			print("a")
-			statusLabel.config(text="Done")
+			if stopFlag == 1:
+				statusLabel.config(text="Stopped")
+			else:
+				statusLabel.config(text="Done")
 			## loop to add hspec le values
 			hspec = np.nan_to_num(hspec)# convert NaNs to zeros
 			if(fileImportFlag == 0):
@@ -502,7 +558,7 @@ def getSpec():
 
 ##			print("d")
 			#-------save output file--------
-			if(fileImportFlag == 0):
+			if(fileImportFlag == 0 and stopFlag == 0):  # Only save if not stopped early
 				ts = saveLabel.get()
 				t = time.localtime()
 				ct = "./scans/" + str(t.tm_year) + "-" + str(t.tm_mon) + "-" + str(t.tm_mday) + "_" + time.strftime("%H-%M-%S", t) + "_" + ts
@@ -542,8 +598,12 @@ def getSpec():
 			loadLine = 0
 			selX = -1
 			selY = -1 # reset these values to clear reflectance too
+			wasStopped = stopFlag == 1
 			stopFlag = 0
-			print("h - done")
+			if wasStopped:
+				print("Scan stopped by user")
+			else:
+				print("h - done")
 			return
 		#output = output.decode('utf-8')
 		output = output.split(',')
@@ -552,12 +612,10 @@ def getSpec():
 			unitNumber = int(output[1])
 			#print("unit: " + str(unitNumber))
 			
+			# Store the steps internally but don't update GUI fields
 			panStart = int(output[2])
-			panFrom.set(str(panStart))
 			panStop = int(output[3])
-			panTo.set(str(panStop))
 			pan_Res = int(output[4])
-			panResolution.set(str(pan_Res))
 			panDim = int(0)
 			
 			boxcarN = int(output[9])
@@ -569,12 +627,8 @@ def getSpec():
 			unitSetup()
 
 			tiltStart = int(output[5])
-			tiltFrom.set(str(tiltStart))
 			tiltStop = int(output[6])
-			tiltTo.set(str(tiltStop))			
 			tilt_Res = int(output[7])
-			
-			tiltResolution.set(str(tilt_Res))
 			panDim = int(1+(panStop-panStart)/pan_Res)
 			tiltDim = int(1+(tiltStop-tiltStart)/tilt_Res)
 			print("Hyperspec " + str(panDim) + " by " + str(tiltDim))
@@ -599,7 +653,7 @@ def getSpec():
 			hspecTilt = np.zeros([tiltDim])
 
 
-		if(len(output) == hspec.shape[2]+5):
+		if(len(hspec) > 0 and hasattr(hspec, 'shape') and len(output) == hspec.shape[2]+5):
 			if(int(output[2]) == 0 or int(output[2]) == 1 or int(output[2]) == 2 ):
 				#time.sleep(0.01)
 				#processSpec()
@@ -778,107 +832,262 @@ def togglePreview():
 def goTL():
 	if(scanningFlag == 0):
 		btTL["state"] = "disabled"
-		ts = "l" + tiltTop.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert tilt degrees to steps
+		tilt_deg = tiltTop.get()
+		valid, tilt_val = validateDegreeRange(tilt_deg, "Tilt Top")
+		if not valid:
+			btTL["state"] = "active"
+			return
+		tilt_steps = degreesToSteps(tilt_val)
+		
+		ts = "l" + str(tilt_steps)
+		if not safeSerialWrite(ts):
+			btTL["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for tilt to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b't')):
+			output = safeSerialRead()
+			if output and output.startswith('tilt:'):
 				serFlag = 1
 		time.sleep(0.1)
-		ts = "p" + panLeft.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert pan degrees to steps
+		pan_deg = panLeft.get()
+		valid, pan_val = validateDegreeRange(pan_deg, "Pan Left")
+		if not valid:
+			btTL["state"] = "active"
+			return
+		pan_steps = degreesToSteps(pan_val)
+		
+		ts = "p" + str(pan_steps)
+		if not safeSerialWrite(ts):
+			btTL["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for pan to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b'p')):
+			output = safeSerialRead()
+			if output and output.startswith('pan:'):
 				serFlag = 1
 		btTL["state"] = "active"
 
 def goTR():
 	if(scanningFlag == 0):
 		btTR["state"] = "disabled"
-		ts = "l" + tiltTop.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert tilt degrees to steps
+		tilt_deg = tiltTop.get()
+		valid, tilt_val = validateDegreeRange(tilt_deg, "Tilt Top")
+		if not valid:
+			btTR["state"] = "active"
+			return
+		tilt_steps = degreesToSteps(tilt_val)
+		
+		ts = "l" + str(tilt_steps)
+		if not safeSerialWrite(ts):
+			btTR["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for tilt to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b't')):
+			output = safeSerialRead()
+			if output and output.startswith('tilt:'):
 				serFlag = 1
 		time.sleep(0.1)
-		ts = "p" + panRight.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert pan degrees to steps
+		pan_deg = panRight.get()
+		valid, pan_val = validateDegreeRange(pan_deg, "Pan Right")
+		if not valid:
+			btTR["state"] = "active"
+			return
+		pan_steps = degreesToSteps(pan_val)
+		
+		ts = "p" + str(pan_steps)
+		if not safeSerialWrite(ts):
+			btTR["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for pan to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b'p')):
+			output = safeSerialRead()
+			if output and output.startswith('pan:'):
 				serFlag = 1
 		btTR["state"] = "active"
 
 def goBL():
 	if(scanningFlag == 0):
 		btBL["state"] = "disabled"
-		ts = "l" + tiltBot.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert tilt degrees to steps
+		tilt_deg = tiltBot.get()
+		valid, tilt_val = validateDegreeRange(tilt_deg, "Tilt Bottom")
+		if not valid:
+			btBL["state"] = "active"
+			return
+		tilt_steps = degreesToSteps(tilt_val)
+		
+		ts = "l" + str(tilt_steps)
+		if not safeSerialWrite(ts):
+			btBL["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for tilt to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b't')):
+			output = safeSerialRead()
+			if output and output.startswith('tilt:'):
 				serFlag = 1
 		time.sleep(0.1)
-		ts = "p" + panLeft.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert pan degrees to steps
+		pan_deg = panLeft.get()
+		valid, pan_val = validateDegreeRange(pan_deg, "Pan Left")
+		if not valid:
+			btBL["state"] = "active"
+			return
+		pan_steps = degreesToSteps(pan_val)
+		
+		ts = "p" + str(pan_steps)
+		if not safeSerialWrite(ts):
+			btBL["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for pan to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b'p')):
+			output = safeSerialRead()
+			if output and output.startswith('pan:'):
 				serFlag = 1
 		btBL["state"] = "active"
 
 def goBR():
 	if(scanningFlag == 0):
 		btBR["state"] = "disabled"
-		ts = "l" + tiltBot.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert tilt degrees to steps
+		tilt_deg = tiltBot.get()
+		valid, tilt_val = validateDegreeRange(tilt_deg, "Tilt Bottom")
+		if not valid:
+			btBR["state"] = "active"
+			return
+		tilt_steps = degreesToSteps(tilt_val)
+		
+		ts = "l" + str(tilt_steps)
+		if not safeSerialWrite(ts):
+			btBR["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for tilt to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b't')):
+			output = safeSerialRead()
+			if output and output.startswith('tilt:'):
 				serFlag = 1
 		time.sleep(0.1)
-		ts = "p" + panRight.get()
-		ser.write(str.encode( ts ))
+		
+		# Convert pan degrees to steps
+		pan_deg = panRight.get()
+		valid, pan_val = validateDegreeRange(pan_deg, "Pan Right")
+		if not valid:
+			btBR["state"] = "active"
+			return
+		pan_steps = degreesToSteps(pan_val)
+		
+		ts = "p" + str(pan_steps)
+		if not safeSerialWrite(ts):
+			btBR["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for pan to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b'p')):
+			output = safeSerialRead()
+			if output and output.startswith('pan:'):
 				serFlag = 1
 		btBR["state"] = "active"
 	
 def goZero():
 	if(scanningFlag == 0):
 		btZero["state"] = "disabled"
-		ser.write(str.encode( "l0" ))
+		if not safeSerialWrite("l0"):
+			btZero["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for tilt to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b't')):
+			output = safeSerialRead()
+			if output and output.startswith('tilt:'):
 				serFlag = 1
-		ser.write(str.encode( "p0" ))
+		if not safeSerialWrite("p0"):
+			btZero["state"] = "active"
+			return
 		serFlag = 0
 		while serFlag == 0: # wait for pan to get to where it's going
-			output = ser.readline()
-			if(output.startswith(b'p')):
+			output = safeSerialRead()
+			if output and output.startswith('pan:'):
 				serFlag = 1
 		btZero["state"] = "active"
 
+def setServoAngle(angle):
+	"""Set servo to specific angle (0-180)"""
+	if(scanningFlag == 0):
+		if 0 <= angle <= 180:
+			cmd = f"s{angle}"
+			safeSerialWrite(cmd)
+		else:
+			print("Invalid servo angle. Must be between 0 and 180.")
+
+def openShutter():
+	"""Open the shutter (servo angle 90)"""
+	if(scanningFlag == 0):
+		safeSerialWrite("open")
+
+def closeShutter():
+	"""Close the shutter (servo angle 60)"""
+	if(scanningFlag == 0):
+		safeSerialWrite("close")
+
+def sendCustomCommand():
+	"""Send custom command to Arduino for troubleshooting"""
+	if(scanningFlag == 0):
+		command = customCommandVar.get().strip()
+		if command:
+			safeSerialWrite(command)
+			print(f"Sent custom command: {command}")
+		else:
+			print("Please enter a command")
+
+def degreesToSteps(degrees):
+	"""Convert degrees (-90 to 90) to steps (-512 to 512)"""
+	# Linear conversion: -90° = -512 steps, 90° = 512 steps
+	return int(degrees * 512 / 90)
+
+def validateDegreeRange(value, name):
+	"""Validate that degree value is within -90 to 90 range, clamp if out of range"""
+	deg = float(value)
+	# Clamp values to -90 to 90 range
+	if deg < -90:
+		deg = -90
+	elif deg > 90:
+		deg = 90
+	return True, deg
+
 def showRes(a,b,c):
 	if(scanningFlag == 0):
-		try:			
-			pan = math.floor( (int(panRight.get()) - int(panLeft.get())) / int(panRes.get()) ) +1
-			tilt = math.floor( (int(tiltTop.get()) - int(tiltBot.get())) / int(tiltRes.get()) ) +1
-			pan = math.floor( (int(panTo.get()) - int(panFrom.get())) / int(panResolution.get()) ) +1
-			tilt = math.floor( (int(tiltTo.get()) - int(tiltFrom.get())) / int(tiltResolution.get()) ) +1
+		try:
+			# Validate degree inputs first
+			pan_from_deg = panFrom.get()
+			pan_to_deg = panTo.get()
+			tilt_from_deg = tiltFrom.get()
+			tilt_to_deg = tiltTo.get()
+			
+			valid, pan_from_val = validateDegreeRange(pan_from_deg, "Pan From")
+			if not valid: return
+			valid, pan_to_val = validateDegreeRange(pan_to_deg, "Pan To")
+			if not valid: return
+			valid, tilt_from_val = validateDegreeRange(tilt_from_deg, "Tilt From")
+			if not valid: return
+			valid, tilt_to_val = validateDegreeRange(tilt_to_deg, "Tilt To")
+			if not valid: return
+			
+			# Convert to steps for resolution calculation
+			pan_from_steps = degreesToSteps(pan_from_val)
+			pan_to_steps = degreesToSteps(pan_to_val)
+			tilt_from_steps = degreesToSteps(tilt_from_val)
+			tilt_to_steps = degreesToSteps(tilt_to_val)
+			
+			pan = math.floor( (pan_to_steps - pan_from_steps) / int(panResolution.get()) ) +1
+			tilt = math.floor( (tilt_to_steps - tilt_from_steps) / int(tiltResolution.get()) ) +1
 			ts = str(pan) + "x" + str(tilt)
 			statusLabel.config(text=ts)
 ##			print(ts)
@@ -932,7 +1141,7 @@ def onmouse(event):
 		selY = tiltDim-1
 		
 
-	if(len(hspec)>0):
+	if(len(hspec)>0 and hasattr(hspec, 'shape')):
 		ts = "x:" + str(selX) + " y:" + str(selY) + "\npan:" + str(panStart+pan_Res*selX) + " tilt:" + str(tiltStart+tilt_Res*selY)
 		outLabel.config(text=ts)
 		if(imLum[selY, selX] > 0.1):
@@ -984,7 +1193,7 @@ def setReflVal():
 		ts = "Reflectance\nrel. to " + reflVal + "%"
 		outLabel.config(text=ts)
 ##		try:
-		if(float(reflVal) > 0 and len(hspec) > 0 and selX != -1 and selY != -1):
+		if(float(reflVal) > 0 and len(hspec) > 0 and hasattr(hspec, 'shape') and selX != -1 and selY != -1):
 			refs = hspec[selY][selX]
 
 			with np.errstate(divide='ignore', invalid='ignore'):
@@ -1027,17 +1236,11 @@ def setReflVal():
 			plotGraph("Reflectance set")
 
 		else:
-			reflFlag = 0
-			print("Reflectance cleared")
-##		except:
-##			reflFlag = 0
-##			print("Error reading ref value")
+			clearRefl()
+			ts = "Radiance"
+			outLabel.config(text=ts)
+			# clear reflectance
 
-	else:
-		clearRefl()
-		ts = "Radiance"
-		outLabel.config(text=ts)
-		# clear reflectance
 
 
 def clearRefl():
@@ -1051,7 +1254,7 @@ def clearRefl():
 	wbI = 1.0
 	wbGG = 1.0
 	wbU = 1.0
-	if(len(hspec)>0):
+	if(len(hspec)>0 and hasattr(hspec, 'shape')):
 ##		print("plot update")
 		le = hspec[selY][selX]
 		[ax[i].clear() for i in range(1)]
@@ -1066,12 +1269,19 @@ def startStop():
 	fileImportFlag = 0
 	global stopFlag, scanningFlag
 	if(scanningFlag == 0 and stopFlag == 0):
+		# Start scanning
 		getSpec()
 		return
 	if(scanningFlag == 1 and stopFlag == 0):
+		# Stop scanning
 		print("Stopping")
 		stopFlag = 1
-		getSpec()
+		# Send stop command to Arduino
+		safeSerialWrite("stop")
+		# Change button text back to Start
+		btStart["text"] = "Start"
+		# Re-enable Load button
+		btLoad["state"] = "active"
 		return
 	
 
@@ -1131,7 +1341,7 @@ def imageOutput():
 
 		
 def specOutput():
-	if len(hspec)>0 and selX > -1:
+	if len(hspec)>0 and hasattr(hspec, 'shape') and selX > -1:
 		print("x:" + str(selX) + " y:" + str(selY))
 		##		print("plot update")
 		le = hspec[selY][selX]
@@ -1356,12 +1566,45 @@ receptorListbox.grid(row=2, column=0, columnspan=2, padx=2, pady=2, sticky=N+S+E
 btImOut = Button(refl_frame, text="Exp. Ims", command= lambda: imageOutput())
 btImOut.grid(row=3, column=0, padx=2, pady=2, sticky=N+S+E+W)
 
+# Add servo control buttons
+servoFrame = Frame(refl_frame)
+servoFrame.grid(row=4, column=0, columnspan=2, padx=2, pady=2, sticky=N+S+E+W)
+
+# Shutter label
+shutterLabel = Label(servoFrame, text="Shutter:")
+shutterLabel.grid(row=0, column=0, padx=2, pady=2, sticky=N+W)
+
+btOpenShutter = Button(servoFrame, text="Open", command= lambda: openShutter())
+btOpenShutter.grid(row=0, column=1, padx=2, pady=2, sticky=N+S+E+W)
+
+btCloseShutter = Button(servoFrame, text="Close", command= lambda: closeShutter())
+btCloseShutter.grid(row=0, column=2, padx=2, pady=2, sticky=N+S+E+W)
+
+# Custom command input for troubleshooting
+customCommandLabel = Label(servoFrame, text="Command:")
+customCommandLabel.grid(row=1, column=0, padx=2, pady=2, sticky=N+W)
+
+customCommandVar = StringVar()
+customCommandVar.set("p90")  # Example command
+customCommandEntry = Entry(servoFrame, textvariable=customCommandVar, width=8)
+customCommandEntry.grid(row=1, column=1, padx=2, pady=2, sticky=N+S+E+W)
+
+btSendCommand = Button(servoFrame, text="Send", command= lambda: sendCustomCommand())
+btSendCommand.grid(row=1, column=2, padx=2, pady=2, sticky=N+S+E+W)
+
+servoFrame.columnconfigure(0, weight=0)  # Shutter label - no expansion
+servoFrame.columnconfigure(1, weight=1)  # Open button
+servoFrame.columnconfigure(2, weight=1)  # Close button
+servoFrame.columnconfigure(3, weight=1)  # Command label
+servoFrame.columnconfigure(4, weight=1)  # Command entry
+servoFrame.columnconfigure(5, weight=1)  # Send button
+
 
 outLabel = Label(refl_frame, text = "Radiance", fg="gray", justify="left")
-outLabel.grid(row=4, column=0, padx=2, pady=2, sticky=N+W)
+outLabel.grid(row=5, column=0, padx=2, pady=2, sticky=N+W)
 
 lumLabel = Label(refl_frame, text = " ", justify="left")
-lumLabel.grid(row=4, column=1, padx=2, pady=2, sticky=N+W)
+lumLabel.grid(row=5, column=1, padx=2, pady=2, sticky=N+W)
 
 
 refl_frame.columnconfigure(0, weight=1)

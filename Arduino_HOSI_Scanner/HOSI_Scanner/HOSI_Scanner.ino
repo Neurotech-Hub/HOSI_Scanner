@@ -71,8 +71,11 @@ long tiltVal = 0;
 int darkLight = 1; // 0= dark measurement, 1=light measurement
 long darkRepeat = 30000;// repeat dark measurement every few seconds/minutes
 
-AccelStepper stepper_pan(4, PAN_IN2, PAN_IN4, PAN_IN1, PAN_IN3); // 8=HALF4WIRE, then input pin 1, 2, 3, 4
-AccelStepper stepper_tilt(4, ROLL_IN2, ROLL_IN4, ROLL_IN1, ROLL_IN3); // 8=HALF4WIRE, then input pin 1, 2, 3, 4
+// Add stop flag for interrupting operations
+bool stopRequested = false;
+
+AccelStepper stepper_pan(4, PAN_IN1, PAN_IN3, PAN_IN2, PAN_IN4); // 8=HALF4WIRE, then input pin 1, 2, 3, 4
+AccelStepper stepper_tilt(4, ROLL_IN1, ROLL_IN3, ROLL_IN2, ROLL_IN4); // 8=HALF4WIRE, then input pin 1, 2, 3, 4
 
 // Initialize servo for dark measurement shutter
 Servo shutterServo;
@@ -81,11 +84,11 @@ bool isShutterOpen = false;
 int boxcar = 1;
 
 // Servo pin for dark measurement shutter
-#define SERVO_PIN 11
+#define SERVO_PIN 10
 
 // Shutter positions
-#define SHUTTER_CLOSED 90
-#define SHUTTER_OPEN 60
+#define SHUTTER_CLOSED 100
+#define SHUTTER_OPEN 130
 
 void setup() {
   stepper_pan.setMaxSpeed(500.0); // 800 for half-step
@@ -278,6 +281,13 @@ void reportShutterStatus(){
   Serial.println(isShutterOpen ? SHUTTER_OPEN : SHUTTER_CLOSED);
 }
 
+// Add servo control function
+void setServoAngle(int angle){
+  shutterServo.write(angle);
+  Serial.println("Servo angle set to: " + String(angle));
+  delay(500); // Give the servo time to move
+}
+
 void darkMeasure(){
       //-----------Close shutter for dark measurement------------
       closeShutter();
@@ -289,6 +299,7 @@ void darkMeasure(){
       radianceMeasure();
    
       for (long i = intStep; i <= maxIntTime; i*= 2){
+        if(stopRequested) return; // Check for stop request
         manIntTime = i;
         radianceMeasure();
       }
@@ -303,8 +314,7 @@ void startMeasure(){
       //-----------Return to zero point------------
       //panVal = 0;
       pan(0);
-      //tiltVal = 512;
-      tilt(512);
+      //tilt(512);  // Commented out to prevent unwanted tilt movement
       
       //-----------Close shutter for initial dark measurement------------
       closeShutter();
@@ -323,6 +333,24 @@ void loop() {
   String arg = Serial.readString();
 
   if (arg != NULL){
+
+    // Stop command - interrupt any ongoing operation
+    if(arg == "stop"){
+      stopRequested = true;
+      Serial.println("Stop requested");
+      
+      // Return to origin and close shutter when stopping
+      stepper_pan.enableOutputs();
+      stepper_tilt.enableOutputs();
+      pan(0);  // Return pan to origin
+      tilt(0); // Return tilt to origin
+      closeShutter(); // Close shutter
+      stepper_pan.disableOutputs();
+      stepper_tilt.disableOutputs();
+      
+      Serial.println("Returned to origin and closed shutter");
+      return;
+    }
 
     // manually set integration time
     if(arg.startsWith("t") == true){
@@ -350,6 +378,16 @@ void loop() {
       Serial.println("tilt: " + String((int) arg.toFloat()));
       delay(5);
 
+    // Manual servo control
+    } else if(arg.startsWith("s") == true){
+      arg.replace("s", "");
+      int angle = (int) arg.toFloat();
+      if(angle >= 0 && angle <= 180){
+        setServoAngle(angle);
+      } else {
+        Serial.println("Invalid servo angle (0-180)");
+      }
+
     // Manual spec measure
     } else if(arg.startsWith("r") == true){ // radiance
 
@@ -365,6 +403,7 @@ void loop() {
 
     // -------------  hyperspec --------------
     } else if(arg.startsWith("h") == true){
+      stopRequested = false; // Reset stop flag at start of new scan
       arg.replace("h", "");
       int i= 0;
       while(arg.indexOf(",") != -1){
@@ -387,21 +426,43 @@ void loop() {
       stepper_tilt.enableOutputs();
       //panVal = 0;
       pan(0);
-      tilt(0);
+      //tilt(0);  // Commented out to prevent unwanted tilt movement
 
       //-----------Dark Measure at start------------
       startMeasure();
+      if(stopRequested) {
+        // Return to origin and close shutter when stopped early
+        pan(0);  // Return pan to origin
+        tilt(0); // Return tilt to origin
+        closeShutter(); // Close shutter
+        Serial.println("x");
+        stepper_pan.disableOutputs();
+        stepper_tilt.disableOutputs();
+        Serial.println("Scan stopped early - returned to origin and closed shutter");
+        return;
+      }
       darkMeasure();
 
       unsigned long cDR = millis(); // current time dark repeat
       unsigned long eDR = cDR + darkRepeat; // end time dark repeat
       
       for(tiltVal = hyperVals[3]; tiltVal <= hyperVals[4]; tiltVal += hyperVals[5]){
+        if(stopRequested) break; // Check for stop request
+        
+        // Check for stop command during scanning
+        if(Serial.available()) {
+          String stopCmd = Serial.readString();
+          if(stopCmd == "stop") {
+            stopRequested = true;
+            break;
+          }
+        }
         
         //----------repeat dark measurement based on timeout-----------
         cDR = millis();
         if(cDR >= eDR){
             darkMeasure();
+            if(stopRequested) break; // Check for stop request after dark measure
             //tilt(tiltVal);
             cDR = millis();
             eDR = cDR + darkRepeat;
@@ -423,6 +484,17 @@ void loop() {
           
           //----------pan from left to right-----------
           for(panVal = hyperVals[0]+panStart; panVal <= hyperVals[1]; panVal += panShift){ 
+            if(stopRequested) break; // Check for stop request
+            
+            // Check for stop command during panning
+            if(Serial.available()) {
+              String stopCmd = Serial.readString();
+              if(stopCmd == "stop") {
+                stopRequested = true;
+                break;
+              }
+            }
+            
             pan(panVal);
             radianceMeasure();
           }
@@ -432,13 +504,21 @@ void loop() {
 
 
       //-----------Dark Measure at end------------
-      pan(0);
-      darkMeasure();
+      if(!stopRequested) {
+        pan(0);
+        darkMeasure();
+      }
 
+      // Always return to origin and close shutter at end of scan
+      pan(0);  // Return pan to origin
+      tilt(0); // Return tilt to origin
+      closeShutter(); // Close shutter
+      
       stepper_pan.disableOutputs();
       stepper_tilt.disableOutputs();
 
       Serial.println("x");
+      Serial.println("Scan completed - returned to origin and closed shutter");
 //      Serial.println("\n"); // signal end
     }
   }
