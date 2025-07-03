@@ -30,4 +30,4 @@ Within the GUI, each x-y 'pixel' can be clicked to reveal the full spectrum (320
 
 ## Conclusion
 
-In conclusion, our device captures spectral data for an entire scene which can be analyzed in realtime or posthoc; all data is exported via CSV as well as the RGB image below.
+In conclusion, our device captures spectral data for an entire scene which can be analyzed in realtime or posthoc; all data is exported via CSV file.
