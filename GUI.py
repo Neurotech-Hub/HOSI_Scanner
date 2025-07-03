@@ -30,7 +30,7 @@ availablePorts = []
 root = Tk()
 root.geometry('800x1200')  # Increased height further
 root.minsize(800, 1200)    # Set minimum window size
-root.title('Neurotech Hub Spectrometer')
+root.title('Neurotech Hub Hyperspectral Imager')
 
 # Modern color scheme
 COLORS = {
