@@ -1,14 +1,12 @@
 # Hyperspectral Results
 
-## Device Specifications
-
 Our device utilizes independent pan and roll stepper motors with a resolution of 2048 steps per revolution. An internal servo-controlled shutter enables in-place black point correction every 30s.
 
 <img src="hosi.jpg" alt="HOSI Device" width="100%">
 
 ## Scanning Results
 
-The HOSI device was used to create a 137 x 91 hyperspectral data using our modified GUI. We achieved this by panning 120° and rolling 80°.
+The HOSI device was used to create a 137 x 91 hyperspectral data by panning 120° and rolling 80° at 1° increments.
 
 <img src="scan_output.png" alt="Spectral Output Display" width="100%">
 
