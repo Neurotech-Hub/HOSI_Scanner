@@ -2,11 +2,15 @@
 
 Our device utilizes independent pan and roll stepper motors with a resolution of 2048 steps per revolution. An internal servo-controlled shutter enables in-place black point correction every 30s.
 
-<img src="hosi.jpg" alt="HOSI Device" width="100%">
+<img src="hosi_render.jpg" alt="HOSI Render" width="100%">
+
+<img src="hosi.gif" alt="HOSI In Action" width="100%">
 
 ## Scanning Results
 
 The HOSI device was used to create a 137 x 91 hyperspectral data by panning 120° and rolling 80° at 1° increments.
+
+<img src="hosi.jpg" alt="HOSI Device" width="100%">
 
 Within the GUI, each x-y 'pixel' can be clicked to reveal the full spectrum (320–880 nm) with reporting for radiance and luminance. Once clicked, the spectrum is displayed for that pixel and the peak will be automatically plotted (red arrow). Clicking other points on the plot will draw a vertical line and present data for that wavelength.
 
