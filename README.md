@@ -1,6 +1,8 @@
 # Neurotech Hub Spectrometer
 
-A hyperspectral imaging system with GUI interface for spectral data acquisition and analysis.
+A hyperspectral open-source imager system with GUI interface for spectral data acquisition and analysis. Based on [Troscianko, 2025](https://bmcbiol.biomedcentral.com/articles/10.1186/s12915-024-02110-w).
+
+See our [results](docs/results.md).
 
 ## Features
 
