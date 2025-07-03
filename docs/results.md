@@ -8,11 +8,13 @@ Our device utilizes independent pan and roll stepper motors with a resolution of
 
 The HOSI device was used to create a 137 x 91 hyperspectral data by panning 120° and rolling 80° at 1° increments.
 
-<img src="scan_output.png" alt="Spectral Output Display" width="100%">
-
 Within the GUI, each x-y 'pixel' can be clicked to reveal the full spectrum (320–880 nm) with reporting for radiance and luminance. Once clicked, the spectrum is displayed for that pixel and the peak will be automatically plotted. Clicking other points on the plot will draw a vertical line and present data for that wavelength.
 
 <img src="hosi_gui.png" alt="HOSI GUI Interface" width="100%">
+
+**Exported RGB Image**
+
+<img src="scan_output.png" alt="Spectral Output Display" width="100%">
 
 **Actual Scene (from iPhone)**
 
